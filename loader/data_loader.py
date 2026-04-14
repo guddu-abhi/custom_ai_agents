@@ -18,8 +18,9 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Generator
-
+import torch
 import click
+from sentence_transformers import SentenceTransformer
 from sqlalchemy import String, bindparam, create_engine, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 
@@ -30,7 +31,15 @@ LOADER_DIR = Path(__file__).parent
 DATA_FILE = LOADER_DIR / "meta_Electronics.jsonl"
 CHECKPOINT_FILE = LOADER_DIR / "loader_progress.json"
 DEFAULT_BATCH_SIZE = 1000
-MIN_YEAR = 2018
+MIN_YEAR = 2023
+
+# Embedding model — Qwen3-Embedding-0.6B produces 1024-dim vectors, matching
+# the catalog.product_embeddings.embedding vector(1024) column.
+EMBED_MODEL_PATH = "./models/Qwen3-Embedding-0.6B"
+EMBED_MODEL_NAME  = "Qwen3-Embedding-0.6B"
+
+# Populated once at the start of the `load` command; None disables embedding.
+_embedding_model: SentenceTransformer | None = None
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -110,6 +119,20 @@ def read_jsonl(
 # ---------------------------------------------------------------------------
 # Transform helpers
 # ---------------------------------------------------------------------------
+
+# Strip ASCII control characters (keep printable Unicode + whitespace).
+_SANITIZE_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_WS_RE        = re.compile(r"\s+")
+
+
+def _sanitize(text: str | None) -> str:
+    """Remove control characters and collapse runs of whitespace."""
+    if not text:
+        return ""
+    text = _SANITIZE_RE.sub("", text)
+    return _WS_RE.sub(" ", text).strip()
+
+
 _YEAR_RE = re.compile(r"\b(19\d{2}|20\d{2})\b")
 _DATE_FMTS = ("%B %d, %Y", "%b %d, %Y", "%Y-%m-%d", "%m/%d/%Y")
 
@@ -170,18 +193,34 @@ def transform(record: dict) -> dict | None:
     if not isinstance(categories, list):
         categories = []
 
+    # ---- embedding content fields (sanitized plain-text) ----
+    # tier_1 ("discovery"): broad signal — category + title + store
+    # tier_2 ("detail"):    rich signal  — title + description + features
+    tier_1_content = _sanitize(" ".join(filter(None, [
+        record.get("main_category"),
+        record.get("title"),
+        record.get("store"),
+    ])))
+    tier_2_content = _sanitize(" ".join(filter(None, [
+        record.get("title"),
+        description,
+        " ".join(features) if features else None,
+    ])))
+
     return {
-        "main_category":  record.get("main_category"),
-        "title":          record.get("title"),
-        "average_rating": record.get("average_rating") or 0,
-        "rating_number":  record.get("rating_number") or 0,
-        "features":       features,
-        "description":    description,
-        "price":          _parse_price(record.get("price")),
-        "store":          record.get("store"),
-        "categories":     categories,
-        "details":        details,
-        "parent_asin":    record.get("parent_asin") or "",
+        "main_category":           record.get("main_category"),
+        "title":                   record.get("title"),
+        "average_rating":          record.get("average_rating") or 0,
+        "rating_number":           record.get("rating_number") or 0,
+        "features":                features,
+        "description":             description,
+        "price":                   _parse_price(record.get("price")),
+        "store":                   record.get("store"),
+        "categories":              categories,
+        "details":                 details,
+        "parent_asin":             record.get("parent_asin") or "",
+        "tier_1_embedding_content": tier_1_content,
+        "tier_2_embedding_content": tier_2_content,
     }
 
 
@@ -201,6 +240,7 @@ _INSERT_SQL = text(
         :features, :description, :price, :store,
         :categories, :details, :parent_asin
     )
+    RETURNING id
     """
 ).bindparams(
     bindparam("features",   type_=ARRAY(String)),
@@ -208,30 +248,83 @@ _INSERT_SQL = text(
     bindparam("details",    type_=JSONB()),
 )
 
+# ---------------------------------------------------------------------------
+# Embedding INSERT — upserts on (product_id, tier, model_name) so re-runs are
+# idempotent.  The ::catalog.embed_tier cast satisfies psycopg3's ENUM check.
+# ---------------------------------------------------------------------------
+_EMBED_INSERT_SQL = text(
+    """
+    INSERT INTO catalog.product_embeddings
+        (product_id, tier, model_name, content, embedding)
+    VALUES
+        (:product_id, CAST(:tier AS catalog.embed_tier), :model_name, :content, CAST(:embedding AS vector))
+    ON CONFLICT (product_id, tier, model_name)
+    DO UPDATE SET
+        content   = EXCLUDED.content,
+        embedding = EXCLUDED.embedding
+    """
+)
+
 
 # ---------------------------------------------------------------------------
 # Batch commit (extracted to keep the main loop readable)
 # ---------------------------------------------------------------------------
-def _commit_batch(
-    conn,
-    batch: list[dict],
-    line_no: int,
-    stats: dict,
-) -> None:
-    """Execute a batch INSERT and update *stats* in-place. Clears *batch*."""
+def _commit_batch(conn, batch, line_no, stats):
+    tier1_texts = [row.pop("tier_1_embedding_content", "") for row in batch]
+    tier2_texts = [row.pop("tier_2_embedding_content", "") for row in batch]
+
+    product_ids: list[int] = []
     try:
-        conn.execute(_INSERT_SQL, batch)
+        for row in batch:
+            result = conn.execute(_INSERT_SQL, row)
+            product_ids.append(result.scalar_one())
         conn.commit()
         stats["inserted"] += len(batch)
     except Exception as exc:
         conn.rollback()
-        log.error(
-            "Batch insert failed near line %d — rolling back batch of %d: %s",
-            line_no, len(batch), exc,
-        )
+        log.error("Batch insert failed near line %d ...", line_no, len(batch), exc)
         stats["errors"] += len(batch)
-    finally:
-        batch.clear()
+        batch.clear()   # ← clear and return early on failure
+        return          # ← don't attempt embeddings with no product_ids
+    
+    batch.clear()       # ← clear after confirmed success
+
+    if not product_ids or _embedding_model is None:
+        return
+    # ---- Generate + store embeddings ----
+    try:
+        tier1_embs = _embedding_model.encode(
+            tier1_texts, convert_to_numpy=True, show_progress_bar=False
+        )
+        tier2_embs = _embedding_model.encode(
+            tier2_texts, convert_to_numpy=True, show_progress_bar=False
+        )
+
+        emb_rows = []
+        for pid, t1_text, t1_emb, t2_text, t2_emb in zip(
+            product_ids, tier1_texts, tier1_embs, tier2_texts, tier2_embs
+        ):
+            emb_rows.append({
+                "product_id": pid,
+                "tier":       "discovery",
+                "model_name": EMBED_MODEL_NAME,
+                "content":    t1_text,
+                "embedding":  str(t1_emb.tolist()),
+            })
+            emb_rows.append({
+                "product_id": pid,
+                "tier":       "detail",
+                "model_name": EMBED_MODEL_NAME,
+                "content":    t2_text,
+                "embedding":  str(t2_emb.tolist()),
+            })
+
+        conn.execute(_EMBED_INSERT_SQL, emb_rows)
+        conn.commit()
+    except Exception as exc:
+        conn.rollback()
+        log.error("Embedding insert failed near line %d: %s", line_no, exc)
+        stats["errors"] += len(product_ids) * 2
 
 
 # ---------------------------------------------------------------------------
@@ -263,8 +356,23 @@ def cli() -> None:
     default=False,
     help="Ignore existing checkpoint and restart from line 0.",
 )
-def load(env: str, batch_size: int, reset: bool) -> None:
+@click.option(
+    "--max-records",
+    default=0,
+    show_default=True,
+    type=int,
+    help="Stop after inserting this many records (0 = no limit).",
+)
+def load(env: str, batch_size: int, reset: bool, max_records: int) -> None:
     """Stream the JSONL file and insert product rows into PostgreSQL."""
+    global _embedding_model
+
+    # ---- Load embedding model (once) ----
+    log.info("Loading embedding model from %s …", EMBED_MODEL_PATH)
+    device = "mps" if torch.backends.mps.is_available() else "cpu"
+    _embedding_model = SentenceTransformer(EMBED_MODEL_PATH, device=device)    
+    log.info("Embedding model ready.")
+
     # ---- Checkpoint ----
     if reset:
         if CHECKPOINT_FILE.exists():
@@ -283,6 +391,10 @@ def load(env: str, batch_size: int, reset: bool) -> None:
     stats = {"processed": 0, "inserted": 0, "filtered": 0, "errors": 0}
     batch: list[dict] = []
     last_line = start_line
+    done = False
+
+    if max_records > 0:
+        log.info("--max-records=%d: will stop after inserting %d records.", max_records, max_records)
 
     with engine.connect() as conn:
         for line_no, record in read_jsonl(DATA_FILE, start_line=start_line):
@@ -300,6 +412,13 @@ def load(env: str, batch_size: int, reset: bool) -> None:
                 stats["filtered"] += 1
                 continue
 
+            # Trim the row to stay within the max-records cap before batching.
+            if max_records > 0:
+                remaining = max_records - stats["inserted"] - len(batch)
+                if remaining <= 0:
+                    done = True
+                    break
+
             batch.append(row)
 
             if len(batch) >= batch_size:
@@ -309,11 +428,17 @@ def load(env: str, batch_size: int, reset: bool) -> None:
                     "line=%-8d  inserted=%-8d  filtered=%-6d  errors=%d",
                     last_line, stats["inserted"], stats["filtered"], stats["errors"],
                 )
+                if max_records > 0 and stats["inserted"] >= max_records:
+                    done = True
+                    break
 
         # ---- Flush the final partial batch ----
         if batch:
             _commit_batch(conn, batch, last_line, stats)
             _save_checkpoint(last_line)
+
+    if done:
+        log.info("--max-records limit (%d) reached — stopping early.", max_records)
 
     log.info(
         "Load complete. processed=%d  inserted=%d  filtered=%d  errors=%d",
