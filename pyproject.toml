@@ -17,6 +17,10 @@ dependencies = [
     "loguru>=0.7.3",
     "openai-agents>=0.7.0",
     "fastapi>=0.116.1",
+    "alembic>=1.16.5",
+    "psycopg>=3.2.13",
+    "pq>=1.9.1",
+    "psycopg-binary>=3.2.13",
 ]
 classifiers = [
     "Typing :: Typed",
