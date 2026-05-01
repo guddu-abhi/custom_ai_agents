@@ -21,6 +21,9 @@ dependencies = [
     "psycopg>=3.2.13",
     "pq>=1.9.1",
     "psycopg-binary>=3.2.13",
+    "sentence-transformers>=5.1.2",
+    "nltk>=3.9.2",
+    "torch>=2.8.0",
 ]
 classifiers = [
     "Typing :: Typed",
@@ -158,3 +161,9 @@ markers = [
 
 [tool.inline-snapshot]
 format-command = "ruff format --stdin-filename {filename}"
+
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
