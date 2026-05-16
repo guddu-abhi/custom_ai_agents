@@ -63,3 +63,35 @@ search query env="local" k="10":
 # Usage: just eval "wireless noise cancelling headphones"
 eval query env="local" k="10" threshold="0.6":
     uv run python -m retrieval eval "{{query}}" --env {{env}} --k {{k}} --threshold {{threshold}}
+
+# Pull the default Ollama chat model used by generation/
+ollama-pull-llm:
+    ollama pull qwen2.5:3b-instruct
+
+# Run a single grounded answer
+# Usage: just generate "wireless headphones under \$50"
+#        just generate "..." provider=ollama model=qwen2.5:3b-instruct k=5
+generate query env="local" provider="openai" model="" k="8" temperature="0.2":
+    uv run python -m generation generate '{{query}}' \
+        --env {{env}} --provider {{provider}} \
+        {{ if model != "" { "--model " + model } else { "" } }} \
+        --k {{k}} --temperature {{temperature}}
+
+# Run a single grounded answer using the local Ollama LLM (no OpenAI calls)
+# Usage: just generate-local "wireless headphones under \$50"
+#        just generate-local "best gaming earbuds" model=llama3.1:8b
+#        just generate-local "..." k=5 temperature=0.4
+generate-local query env="local" model="qwen2.5:3b-instruct" k="8" temperature="0.2":
+    uv run python -m generation generate '{{query}}' \
+        --env {{env}} --provider ollama --model {{model}} \
+        --k {{k}} --temperature {{temperature}}
+
+# Retrieval + generation + grounding eval
+# Usage: just rag-eval "wireless headphones under $50"
+#        just rag-eval "..." judge=true
+rag-eval query env="local" provider="openai" model="" k="8" threshold="0.6" judge="false":
+    uv run python -m generation rag-eval "{{query}}" \
+        --env {{env}} --provider {{provider}} \
+        {{ if model != "" { "--model " + model } else { "" } }} \
+        --k {{k}} --threshold {{threshold}} \
+        {{ if judge == "true" { "--judge" } else { "" } }}

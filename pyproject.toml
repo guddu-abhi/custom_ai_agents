@@ -158,6 +158,7 @@ filterwarnings = [
 ]
 markers = [
     "allow_call_model_methods: mark test as allowing calls to real model implementations",
+    "slow: marks tests that hit real external services (OpenAI, Ollama, etc.)",
 ]
 
 [tool.inline-snapshot]
