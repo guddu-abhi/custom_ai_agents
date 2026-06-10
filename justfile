@@ -57,12 +57,12 @@ alembic:
 # Run a vector search against catalog.product_embeddings
 # Usage: just search "wireless noise cancelling headphones"
 search query env="local" k="10":
-    uv run python -m retrieval search "{{query}}" --env {{env}} --k {{k}}
+    uv run python -m retrieval search '{{query}}' --env {{env}} --k {{k}}
 
 # Run search + lightweight heuristic relevance evaluation
 # Usage: just eval "wireless noise cancelling headphones"
 eval query env="local" k="10" threshold="0.6":
-    uv run python -m retrieval eval "{{query}}" --env {{env}} --k {{k}} --threshold {{threshold}}
+    uv run python -m retrieval eval '{{query}}' --env {{env}} --k {{k}} --threshold {{threshold}}
 
 # Pull the default Ollama chat model used by generation/
 ollama-pull-llm:
@@ -90,7 +90,15 @@ generate-local query env="local" model="qwen2.5:3b-instruct" k="8" temperature="
 # Usage: just rag-eval "wireless headphones under $50"
 #        just rag-eval "..." judge=true
 rag-eval query env="local" provider="openai" model="" k="8" threshold="0.6" judge="false":
-    uv run python -m generation rag-eval "{{query}}" \
+    uv run python -m generation rag-eval '{{query}}' \
+        --env {{env}} --provider {{provider}} \
+        {{ if model != "" { "--model " + model } else { "" } }} \
+        --k {{k}} --threshold {{threshold}} \
+        {{ if judge == "true" { "--judge" } else { "" } }}
+
+
+rag-eval-local query env="local" provider="ollama" model="qwen2.5:3b-instruct" k="8" threshold="0.6" judge="false":
+    uv run python -m generation rag-eval '{{query}}' \
         --env {{env}} --provider {{provider}} \
         {{ if model != "" { "--model " + model } else { "" } }} \
         --k {{k}} --threshold {{threshold}} \

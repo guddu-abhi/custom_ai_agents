@@ -2,6 +2,7 @@ import logging
 import sys
 
 import click
+from dotenv import load_dotenv
 
 from domain.models.generation import GenerationMetrics, GenerationResult, ProviderName
 from generation.config import settings as gen_settings
@@ -23,6 +24,10 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 log = logging.getLogger(__name__)
+
+# Load root .env into the process environment so the OpenAI SDK can read
+# OPENAI_API_KEY itself (per generation/CLAUDE.md, the provider must not read it).
+load_dotenv()
 
 _ENV_CHOICE = click.Choice(["local", "dev", "qa", "prod"], case_sensitive=False)
 _PROVIDER_CHOICE = click.Choice(["openai", "ollama"], case_sensitive=False)
