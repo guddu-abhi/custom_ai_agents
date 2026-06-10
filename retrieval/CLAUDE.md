@@ -21,8 +21,8 @@ agent tool wrap the same `SearchService` later.
   experiment, write a new alembic migration that adds rows under a new
   `model_name`, then pass it through the embedder.
 - Don't add LLM calls inside `EvaluationService` — heuristic-only by design.
-  An LLM-as-judge mode goes behind a `--judge` flag in the CLI, not in the
-  service.
+  LLM-as-judge for retrieval+generation lives in `generation/core/evaluator.py`
+  behind the `just rag-eval ... judge=true` flag; don't duplicate it here.
 - Don't put HTTP / agent / CLI logic inside `core/`.
 - Don't bypass the HNSW index by writing queries that can't use
   `ORDER BY embedding <=> ...` (e.g. wrapping the column in a function).

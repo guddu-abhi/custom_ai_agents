@@ -14,7 +14,9 @@ via JSON checkpoint.
   testcontainers (skeleton: `test_product_repo.py`).
 
 ## Don't
-- Don't add query/read paths here — those live in `retrieval/`.
+- Don't add query/read paths here — those live in `retrieval/`. LLM /
+  generation logic lives in `generation/`. `loader/` is write-only against
+  `catalog.*`.
 - Don't `executemany` with `RETURNING` (psycopg3 limitation; use row-by-row
   `execute` like `ProductRepository.bulk_insert`).
 - Don't change `embed_model_name` (default `nomic-embed-text`, 768-dim) without
