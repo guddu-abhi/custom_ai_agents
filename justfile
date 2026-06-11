@@ -77,6 +77,11 @@ generate query env="local" provider="openai" model="" k="8" temperature="0.2":
         {{ if model != "" { "--model " + model } else { "" } }} \
         --k {{k}} --temperature {{temperature}}
 
+# Otto AI: plan -> retrieve -> answer (two-model code-orchestrated pipeline)
+# Usage: just otto "noise cancelling headphones under \$50"
+otto query env="local":
+    uv run python -m ottoai '{{query}}' --env {{env}}
+
 # Run a single grounded answer using the local Ollama LLM (no OpenAI calls)
 # Usage: just generate-local "wireless headphones under \$50"
 #        just generate-local "best gaming earbuds" model=llama3.1:8b
