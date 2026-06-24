@@ -1,4 +1,4 @@
-from domain.models.search_plan import ProductFilters
+from domain.models.search import ProductFilters
 from ottoai.filters import merge_filters
 
 

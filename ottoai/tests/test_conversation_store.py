@@ -1,7 +1,7 @@
 """Unit tests for the transcript/state store logic using an in-memory fake
 Session (no DB). Exercises state-marker filtering and latest-wins reads."""
 
-from domain.models.search_plan import OttoTurnState, ProductFilters, ShownProduct
+from domain.models.search import OttoTurnState, ProductFilters, ShownProduct
 from ottoai.conversation_store import (
     append_turn,
     load_state,

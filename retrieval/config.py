@@ -1,7 +1,9 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
+
+from otto_lib.config import BaseAppSettings
 
 
-class RetrievalSettings(BaseSettings):
+class RetrievalSettings(BaseAppSettings):
     model_config = SettingsConfigDict(env_prefix="RETRIEVAL_")
 
     default_k: int = 10

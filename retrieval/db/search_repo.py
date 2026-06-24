@@ -1,11 +1,10 @@
-from dataclasses import dataclass
-from decimal import Decimal
 from typing import Any
 
 import numpy as np
-from sqlalchemy import Connection, text
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection
 
-from domain.models.search_plan import ProductFilters
+from domain.models.search import ProductFilters, SearchResult
 
 _SEARCH_SQL_TMPL = """
     SELECT
@@ -68,23 +67,11 @@ def build_filter_sql(filters: ProductFilters | None) -> tuple[str, dict[str, Any
     return "\n".join(clauses), params
 
 
-@dataclass(frozen=True)
-class SearchResult:
-    product_id: int
-    title: str | None
-    main_category: str | None
-    description: str | None
-    price: Decimal | None
-    average_rating: Decimal
-    content: str
-    similarity: float
-
-
 class SearchRepository:
-    def __init__(self, conn: Connection) -> None:
+    def __init__(self, conn: AsyncConnection) -> None:
         self._conn = conn
 
-    def search_by_vector(
+    async def search_by_vector(
         self,
         embedding: np.ndarray,
         k: int,
@@ -93,14 +80,16 @@ class SearchRepository:
     ) -> list[SearchResult]:
         clause, fparams = build_filter_sql(filters)
         sql = text(_SEARCH_SQL_TMPL.format(filter_clauses=clause))
-        rows = self._conn.execute(
-            sql,
-            {
-                "query_emb": str(embedding.tolist()),
-                "k": k,
-                "model_name": model_name,
-                **fparams,
-            },
+        rows = (
+            await self._conn.execute(
+                sql,
+                {
+                    "query_emb": str(embedding.tolist()),
+                    "k": k,
+                    "model_name": model_name,
+                    **fparams,
+                },
+            )
         ).mappings().all()
         return [
             SearchResult(
@@ -116,7 +105,7 @@ class SearchRepository:
             for row in rows
         ]
 
-    def fetch_by_ids(self, product_ids: list[int], model_name: str) -> list[SearchResult]:
+    async def fetch_by_ids(self, product_ids: list[int], model_name: str) -> list[SearchResult]:
         """Re-hydrate already-shown products by id (no vector search). Used by the
         conversational follow-up path where the user asks about products that were
         surfaced on a previous turn. Returns results in the given id order;
@@ -124,9 +113,11 @@ class SearchRepository:
         if not product_ids:
             return []
         rows = (
-            self._conn.execute(
-                text(_FETCH_BY_IDS_SQL),
-                {"ids": product_ids, "model_name": model_name},
+            (
+                await self._conn.execute(
+                    text(_FETCH_BY_IDS_SQL),
+                    {"ids": product_ids, "model_name": model_name},
+                )
             )
             .mappings()
             .all()

@@ -1,6 +1,5 @@
 from agents import Agent
-
-from domain.models.search_plan import ConversationalSearchPlan, SearchPlan
+from domain.models.search import ConversationalSearchPlan, SearchPlan
 from ottoai.config import settings
 
 PLANNER_INSTRUCTIONS = (

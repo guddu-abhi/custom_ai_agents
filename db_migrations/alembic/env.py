@@ -2,11 +2,21 @@
 
 import asyncio
 from logging.config import fileConfig
+
 from alembic import context
 from sqlalchemy import MetaData, text
 from sqlalchemy.orm import declarative_base
-from utils.db_utils import WebAppDBFactory
-from orm import CatalogBase
+
+from otto_lib.config import Env
+from otto_lib.db.engine import WebAppDBFactory
+
+
+# Inlined autogenerate scaffold (was orm.CatalogBase). Migrations use raw
+# op.execute, so this declarative base stays out of otto_lib/domain per the
+# no-ORM rule; it only exists to give declarative_base a cls hook below.
+class CatalogBase:
+    pass
+
 
 # this is the Alembic Config object
 config = context.config
@@ -23,7 +33,7 @@ CATALOG_BASE = declarative_base(metadata=metadata, cls=CatalogBase)  # type: ign
 target_metadata = CATALOG_BASE.metadata
 
 if connectable is None:
-    connectable = WebAppDBFactory.get_db_engine(env="local")  # type: ignore[call-arg]
+    connectable = WebAppDBFactory.get_db_engine(Env.LOCAL)
 
 
 def include_name(name, type_, parent_names):

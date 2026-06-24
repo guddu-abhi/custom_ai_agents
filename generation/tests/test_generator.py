@@ -1,10 +1,10 @@
 from decimal import Decimal
 
 from domain.models.generation import Usage
+from domain.models.search import SearchResult
 from generation.core.generator import GenerationService
 from generation.core.prompt import PromptBuilder
-from generation.core.providers.base import GenerationParams, LLMResponse
-from retrieval.db.search_repo import SearchResult
+from otto_lib.llm.base import GenerationParams, LLMResponse
 
 
 class FakeProvider:

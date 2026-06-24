@@ -3,10 +3,10 @@ import logging
 import sys
 
 import click
-from agents import Runner
 from dotenv import load_dotenv
 
-from domain.models.search_plan import OttoAnswer, SearchPlan
+from agents import Runner
+from domain.models.search import OttoAnswer, SearchPlan
 from ottoai.config import settings
 from ottoai.otto_agent import OttoAgent
 from ottoai.planner import planner_agent

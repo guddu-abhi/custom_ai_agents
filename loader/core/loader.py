@@ -1,17 +1,17 @@
 import json
 import logging
 import sys
-from dataclasses import dataclass, field
+from collections.abc import Generator
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Generator
 
 from sqlalchemy import Connection
 
-from loader.core.embedder import EmbeddingService
 from loader.core.transformer import PipelineRow, transform
 from loader.db.embed_repo import EmbeddingRepository
 from loader.db.product_repo import ProductRepository
 from loader.utils.checkpoint import CheckpointManager
+from otto_lib.embedding import EmbeddingService
 
 logging.basicConfig(
     level=logging.INFO,

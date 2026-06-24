@@ -1,20 +1,57 @@
-import asyncio
 from collections.abc import AsyncIterator
 
 from agents import Runner, custom_span, trace
-from loguru import logger
-
-from domain.models.search_plan import OttoAnswer, SearchPlan
+from domain.models.search import OttoAnswer, SearchPlan, SearchResult
 from generation.core.generator import extract_citations
 from generation.core.prompt import PromptBuilder
 from loader.config import settings as loader_settings
-from loader.core.embedder import EmbeddingService
-from loader.db.engine import get_connection
+from otto_lib.config import Env
+from otto_lib.db.engine import WebAppDBFactory
+from otto_lib.embedding import EmbeddingService
+from otto_lib.logging import get_logger
 from ottoai.answerer import answerer_agent
 from ottoai.config import settings
 from ottoai.planner import planner_agent
 from retrieval.core.searcher import SearchService
-from retrieval.db.search_repo import SearchRepository, SearchResult
+from retrieval.db.search_repo import SearchRepository
+
+logger = get_logger()
+
+
+async def retrieve_products(
+    embedder: EmbeddingService, plan: SearchPlan, relax: bool = True
+) -> list[SearchResult]:
+    """Deterministic retrieval for a single `SearchPlan` (vector search + filters).
+
+    Shared by the code-orchestrated pipeline (`OttoAgent._retrieve`) and the
+    agentic `single_agent.py` tool. The SQL and filter-building are identical for
+    both; the only difference is `relax`.
+
+    `relax=True` (default, used by `OttoAgent`): if a filtered search returns
+    nothing, retry once with filters dropped so the one-shot answerer still gets
+    relevant products. This makes sense when the caller has no second chance.
+
+    `relax=False` (used by the single-agent tool): return honest results. A
+    silent relax would feed the agent off-target products (e.g. non-Sony items
+    for a `brand=Sony` query), pollute the citation set, and rob the agent of the
+    chance to recover by re-searching with a better query / fewer filters.
+    """
+    async with WebAppDBFactory.get_db_engine(Env(settings.env)).connect() as conn:
+        searcher = SearchService(embedder, SearchRepository(conn))
+        results = await searcher.search(plan.query, k=settings.retrieve_k, filters=plan.filters)
+
+        # Auto-relax: structured filters (brand / price_max / min_rating) can
+        # over-constrain (or fall outside the ANN window) and return nothing.
+        # Rather than leave a one-shot answerer empty-handed, retry once on the
+        # same vector query with filters dropped so the user still gets products.
+        if relax and not results and plan.filters.model_dump(exclude_none=True):
+            logger.info(
+                "otto | filtered search returned 0 rows (filters={}); "
+                "relaxing filters and retrying on the vector query",
+                plan.filters.model_dump(exclude_none=True),
+            )
+            results = await searcher.search(plan.query, k=settings.retrieve_k, filters=None)
+    return results[: settings.final_k]
 
 
 class OttoAgent:
@@ -24,23 +61,8 @@ class OttoAgent:
         )
         self._prompt = PromptBuilder(max_context_chars=settings.max_context_chars)
 
-    def _retrieve(self, plan: SearchPlan) -> list[SearchResult]:
-        with get_connection(settings.env) as conn:
-            searcher = SearchService(self._embedder, SearchRepository(conn))
-            results = searcher.search(plan.query, k=settings.retrieve_k, filters=plan.filters)
-
-            # Auto-relax: structured filters (brand / price_max / min_rating) can
-            # over-constrain on sparse metadata and return nothing. Rather than
-            # leave the answerer empty-handed, retry once on the same vector query
-            # with filters dropped so the user still gets relevant products.
-            if not results and plan.filters.model_dump(exclude_none=True):
-                logger.info(
-                    "otto | filtered search returned 0 rows (filters={}); "
-                    "relaxing filters and retrying on the vector query",
-                    plan.filters.model_dump(exclude_none=True),
-                )
-                results = searcher.search(plan.query, k=settings.retrieve_k, filters=None)
-        return results[: settings.final_k]
+    async def _retrieve(self, plan: SearchPlan) -> list[SearchResult]:
+        return await retrieve_products(self._embedder, plan)
 
     async def stream(self, query: str) -> AsyncIterator[str | OttoAnswer]:
         # One trace per user turn unifies planner + retrieval + answerer into a
@@ -62,7 +84,7 @@ class OttoAgent:
                 "retrieve",
                 data={"retrieve_k": settings.retrieve_k, "final_k": settings.final_k},
             ):
-                results = await asyncio.to_thread(self._retrieve, plan)
+                results = await self._retrieve(plan)
             logger.info(
                 "otto | retrieved {} results (top: {})",
                 len(results),

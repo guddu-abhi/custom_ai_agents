@@ -1,5 +1,4 @@
 from agents import Agent
-
 from generation.core.prompt import SYSTEM_PROMPT
 from ottoai.config import settings
 

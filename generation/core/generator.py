@@ -1,9 +1,10 @@
 import time
 
+from domain.generation import LLMProvider
 from domain.models.generation import Citation, GenerationResult, ProviderName
+from domain.models.search import SearchResult
 from generation.core.prompt import CITATION_RE, PromptBuilder
-from generation.core.providers.base import GenerationParams, LLMProvider
-from retrieval.db.search_repo import SearchResult
+from otto_lib.llm.base import GenerationParams
 
 
 class GenerationService:

@@ -108,3 +108,7 @@ rag-eval-local query env="local" provider="ollama" model="qwen2.5:3b-instruct" k
         {{ if model != "" { "--model " + model } else { "" } }} \
         --k {{k}} --threshold {{threshold}} \
         {{ if judge == "true" { "--judge" } else { "" } }}
+
+
+run-webapp:
+    uv run uvicorn webapp.main:app

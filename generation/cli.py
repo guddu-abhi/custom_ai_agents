@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import sys
 
@@ -5,17 +6,19 @@ import click
 from dotenv import load_dotenv
 
 from domain.models.generation import GenerationMetrics, GenerationResult, ProviderName
+from domain.models.search import SearchResult
 from generation.config import settings as gen_settings
 from generation.core.evaluator import EvaluationService
 from generation.core.generator import GenerationService
 from generation.core.prompt import PromptBuilder
-from generation.core.providers import get_provider
-from generation.core.providers.base import GenerationParams
 from loader.config import settings as loader_settings
-from loader.core.embedder import EmbeddingService
-from loader.db.engine import get_connection
+from otto_lib.config import Env
+from otto_lib.db.engine import WebAppDBFactory
+from otto_lib.embedding import EmbeddingService
+from otto_lib.llm import get_provider
+from otto_lib.llm.base import GenerationParams
 from retrieval.core.searcher import SearchService
-from retrieval.db.search_repo import SearchRepository, SearchResult
+from retrieval.db.search_repo import SearchRepository
 
 logging.basicConfig(
     level=logging.INFO,
@@ -185,9 +188,11 @@ def _run_pipeline(
         loader_settings.embed_model_name, loader_settings.ollama_base_url
     )
 
-    with get_connection(env) as conn:
-        searcher = SearchService(embedder, SearchRepository(conn))
-        results = searcher.search(query, k=k)
+    async def _retrieve() -> list[SearchResult]:
+        async with WebAppDBFactory.get_db_engine(Env(env)).connect() as conn:
+            return await SearchService(embedder, SearchRepository(conn)).search(query, k=k)
+
+    results = asyncio.run(_retrieve())
 
     log.info("Generating answer via provider=%s model=%s", provider_name, chosen_model)
     llm = get_provider(provider_name)

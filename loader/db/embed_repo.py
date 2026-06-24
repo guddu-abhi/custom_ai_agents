@@ -1,6 +1,6 @@
 from sqlalchemy import Connection, text
 
-from loader.core.embedder import EmbeddingService
+from otto_lib.embedding import EmbeddingService
 
 _EMBED_INSERT_SQL = text(
     """

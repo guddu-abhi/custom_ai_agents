@@ -1,4 +1,4 @@
-from domain.models.search_plan import ProductFilters
+from domain.models.search import ProductFilters
 from retrieval.db.search_repo import build_filter_sql
 
 

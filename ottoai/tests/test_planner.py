@@ -1,8 +1,8 @@
 import os
 
 import pytest
-from agents import Runner
 
+from agents import Runner
 from ottoai.planner import planner_agent
 
 

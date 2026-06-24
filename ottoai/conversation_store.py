@@ -11,7 +11,7 @@ state item.
 
 from agents import TResponseInputItem
 from agents.memory import Session
-from domain.models.search_plan import OttoTurnState
+from domain.models.search import OttoTurnState
 
 # Marker prefix that tags the single structured-state item among the message
 # items, so we can pick it out (and filter it from the human transcript).

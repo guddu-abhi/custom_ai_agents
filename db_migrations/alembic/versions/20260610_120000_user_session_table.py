@@ -11,7 +11,8 @@ Revises: e7b4d2c8a915
 Create Date: 2026-06-10 12:00:00.000000
 
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
+from typing import Union
 
 from alembic import op
 

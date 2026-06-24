@@ -1,15 +1,18 @@
+import asyncio
 import logging
 import sys
 
 import click
 
+from domain.models.search import SearchResult
 from loader.config import settings as loader_settings
-from loader.core.embedder import EmbeddingService
-from loader.db.engine import get_connection
+from otto_lib.config import Env
+from otto_lib.db.engine import WebAppDBFactory
+from otto_lib.embedding import EmbeddingService
 from retrieval.config import settings as retrieval_settings
 from retrieval.core.evaluator import EvalReport, EvaluationService
 from retrieval.core.searcher import SearchService
-from retrieval.db.search_repo import SearchRepository, SearchResult
+from retrieval.db.search_repo import SearchRepository
 
 logging.basicConfig(
     level=logging.INFO,
@@ -42,9 +45,11 @@ def search(query: str, env: str, k: int) -> None:
     log.info("Embedding query via %s @ %s", loader_settings.embed_model_name, loader_settings.ollama_base_url)
     embedder = EmbeddingService(loader_settings.embed_model_name, loader_settings.ollama_base_url)
 
-    with get_connection(env) as conn:
-        searcher = SearchService(embedder, SearchRepository(conn))
-        results = searcher.search(query, k=k)
+    async def _retrieve() -> list[SearchResult]:
+        async with WebAppDBFactory.get_db_engine(Env(env)).connect() as conn:
+            return await SearchService(embedder, SearchRepository(conn)).search(query, k=k)
+
+    results = asyncio.run(_retrieve())
 
     _print_results_table(results)
     _print_ids_tuple(results)
@@ -73,9 +78,11 @@ def eval_cmd(query: str, env: str, k: int, threshold: float) -> None:
     embedder = EmbeddingService(loader_settings.embed_model_name, loader_settings.ollama_base_url)
     evaluator = EvaluationService(similarity_threshold=threshold)
 
-    with get_connection(env) as conn:
-        searcher = SearchService(embedder, SearchRepository(conn))
-        results = searcher.search(query, k=k)
+    async def _retrieve() -> list[SearchResult]:
+        async with WebAppDBFactory.get_db_engine(Env(env)).connect() as conn:
+            return await SearchService(embedder, SearchRepository(conn)).search(query, k=k)
+
+    results = asyncio.run(_retrieve())
 
     report = evaluator.evaluate(query, results)
     _print_eval_table(results, report)

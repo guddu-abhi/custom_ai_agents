@@ -1,7 +1,7 @@
 from decimal import Decimal
 
+from domain.models.search import SearchResult
 from generation.core.generator import extract_citations
-from retrieval.db.search_repo import SearchResult
 
 
 def _result(pid: int, title: str, sim: float) -> SearchResult:

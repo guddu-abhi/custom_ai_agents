@@ -1,20 +1,20 @@
-import asyncio
 import json
 from collections.abc import AsyncIterator
 
-from loguru import logger
-
 from agents import Runner, custom_span, trace
 from agents.memory import Session
-from domain.models.search_plan import (
+from domain.models.search import (
     ConversationalSearchPlan,
     OttoAnswer,
     OttoTurnState,
     SearchPlan,
+    SearchResult,
     ShownProduct,
 )
 from generation.core.generator import extract_citations
-from loader.db.engine import get_connection
+from otto_lib.config import Env
+from otto_lib.db.engine import WebAppDBFactory
+from otto_lib.logging import get_logger
 from ottoai.answerer import answerer_agent
 from ottoai.config import settings
 from ottoai.conversation_store import (
@@ -26,7 +26,9 @@ from ottoai.conversation_store import (
 from ottoai.filters import merge_filters
 from ottoai.otto_agent import OttoAgent
 from ottoai.planner import conversational_planner_agent
-from retrieval.db.search_repo import SearchRepository, SearchResult
+from retrieval.db.search_repo import SearchRepository
+
+logger = get_logger()
 
 
 class ConversationalOttoAgent(OttoAgent):
@@ -42,10 +44,10 @@ class ConversationalOttoAgent(OttoAgent):
     5. persist the turn.
     """
 
-    def _fetch_shown(self, product_ids: list[int]) -> list[SearchResult]:
-        with get_connection(settings.env) as conn:
+    async def _fetch_shown(self, product_ids: list[int]) -> list[SearchResult]:
+        async with WebAppDBFactory.get_db_engine(Env(settings.env)).connect() as conn:
             repo = SearchRepository(conn)
-            return repo.fetch_by_ids(product_ids, self._embedder.model_name)
+            return await repo.fetch_by_ids(product_ids, self._embedder.model_name)
 
     def _planner_input(
         self, transcript: str, state: OttoTurnState, message: str
@@ -98,8 +100,8 @@ class ConversationalOttoAgent(OttoAgent):
             reuse_shown = not plan.needs_retrieval and bool(state.shown_products)
             if reuse_shown:
                 with custom_span("rehydrate-shown", data={"n": len(state.shown_products)}):
-                    results = await asyncio.to_thread(
-                        self._fetch_shown, [p.product_id for p in state.shown_products]
+                    results = await self._fetch_shown(
+                        [p.product_id for p in state.shown_products]
                     )
                 shown_products = state.shown_products
             else:
@@ -107,8 +109,8 @@ class ConversationalOttoAgent(OttoAgent):
                     "retrieve",
                     data={"retrieve_k": settings.retrieve_k, "final_k": settings.final_k},
                 ):
-                    results = await asyncio.to_thread(
-                        self._retrieve, SearchPlan(query=plan.query or message, filters=merged)
+                    results = await self._retrieve(
+                        SearchPlan(query=plan.query or message, filters=merged)
                     )
                 shown_products = [
                     ShownProduct(product_id=r.product_id, title=r.title) for r in results
