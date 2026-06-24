@@ -2,10 +2,10 @@ import os
 
 import pytest
 
-from generation.core.providers.base import GenerationParams
-from generation.core.providers.ollama import OllamaProvider
-from generation.core.providers.openai import OpenAIProvider
 from loader.config import settings as loader_settings
+from otto_lib.llm.base import GenerationParams
+from otto_lib.llm.ollama import OllamaProvider
+from otto_lib.llm.openai import OpenAIProvider
 
 
 @pytest.mark.slow

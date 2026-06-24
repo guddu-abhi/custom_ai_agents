@@ -1,10 +1,11 @@
 import asyncio
-import json
-from utils.session_utils import db_session
-from sqlalchemy import text
-from agents import function_tool
 
 from pydantic import BaseModel
+from sqlalchemy import text
+
+from agents import function_tool
+from otto_lib.db.session import db_session
+
 
 class ProductDescriptionResponse(BaseModel):
     description: str

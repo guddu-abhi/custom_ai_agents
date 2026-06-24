@@ -1,9 +1,10 @@
 import time
 
+from domain.generation import LLMProvider
 from domain.models.generation import Citation, GenerationResult, ProviderName
+from domain.models.search import SearchResult
 from generation.core.prompt import CITATION_RE, PromptBuilder
-from generation.core.providers.base import GenerationParams, LLMProvider
-from retrieval.db.search_repo import SearchResult
+from otto_lib.llm.base import GenerationParams
 
 
 class GenerationService:
@@ -24,7 +25,7 @@ class GenerationService:
         response = self._provider.complete(payload.system, payload.user, self._params)
         latency_ms = int((time.monotonic() - start) * 1000)
 
-        citations = _extract_citations(response.text, results)
+        citations = extract_citations(response.text, results)
         provider_name: ProviderName = self._provider.name  # type: ignore[assignment]
         return GenerationResult(
             query=query,
@@ -37,7 +38,7 @@ class GenerationService:
         )
 
 
-def _extract_citations(answer: str, results: list[SearchResult]) -> tuple[Citation, ...]:
+def extract_citations(answer: str, results: list[SearchResult]) -> tuple[Citation, ...]:
     by_id = {r.product_id: r for r in results}
     seen: set[int] = set()
     out: list[Citation] = []

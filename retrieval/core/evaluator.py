@@ -1,7 +1,7 @@
 import re
 from dataclasses import dataclass
 
-from retrieval.db.search_repo import SearchResult
+from domain.models.search import SearchResult
 
 _STOPWORDS: frozenset[str] = frozenset(
     {

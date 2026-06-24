@@ -7,10 +7,10 @@ from pathlib import Path
 import nltk
 
 from domain.models.generation import GenerationMetrics, GenerationResult
+from domain.models.search import SearchResult
 from generation.core.prompt import CITATION_RE
-from generation.core.providers.base import GenerationParams
-from generation.core.providers.openai import OpenAIProvider
-from retrieval.db.search_repo import SearchResult
+from otto_lib.llm.base import GenerationParams
+from otto_lib.llm.openai import OpenAIProvider
 
 log = logging.getLogger(__name__)
 

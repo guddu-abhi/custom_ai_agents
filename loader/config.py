@@ -1,7 +1,9 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
+
+from otto_lib.config import BaseAppSettings
 
 
-class Settings(BaseSettings):
+class Settings(BaseAppSettings):
     model_config = SettingsConfigDict(env_prefix="LOADER_")
 
     db_url: str = "postgresql+psycopg://postgres:example@localhost:5432/postgres"

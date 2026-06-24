@@ -1,8 +1,8 @@
 from decimal import Decimal
 
 from domain.models.generation import GenerationResult, Usage
+from domain.models.search import SearchResult
 from generation.core.evaluator import EvaluationService
-from retrieval.db.search_repo import SearchResult
 
 
 def _result(pid: int, title: str = "T") -> SearchResult:

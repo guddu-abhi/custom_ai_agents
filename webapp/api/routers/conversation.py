@@ -1,25 +1,16 @@
+import json
+from uuid import uuid4
+
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
-from httpcore import request
-from pydantic import BaseModel
-from agents import Runner, TResponseInputItem
-from ops_agents.product_advisor_agent import product_advisor_agent
-from ops_agents.billing_agent import billing_agent
-from utils.session_utils import get_db_session, get_user_session, db_session
-from webapp.schema.api_request import ConversationRequest
-from webapp.schema.api_response import ConversationResponse
-from ops_agents.customer_triage_agent import customer_desk_agent
-from ops_agents.registry import get_agent_by_name
-from domain.models.conversation_state import MinimalConversation, UserMessage, AssistantMessage
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import Session, base
-from pathlib import Path
-from uuid import uuid4
-from datetime import datetime
-import json
-from sqlalchemy.orm import declarative_base
-from loguru import logger
+from sqlalchemy.orm import Session
 
+from agents import Runner, TResponseInputItem
+from otto_lib.db.session import get_db_session, get_user_session
+from otto_lib.logging import get_logger
+from webapp.schema.api_request import ConversationRequest
+
+logger = get_logger()
 router = APIRouter()
 
 
@@ -68,41 +59,3 @@ async def sse(user_id: str, active_agent, input_items, session_id: str, session:
 
         error_msg = json.dumps({'type': 'error', 'message': str(e)})
         yield f"data: {error_msg}\n\n"
-
-@router.post("/chat/conversation")
-async def chat_conversation(
-    request: ConversationRequest,
-    session: Session = Depends(get_db_session)
-):
-    # Use provided session_id or generate a new one
-    session_id = request.session_id or str(uuid4())
-
-    # Get database session (will create user_session record if it doesn't exist)
-    # async with db_session() as session:
-    user_session = await get_user_session(request.user_id, session_id, session)
-
-    logger.info(f"Current agent state for user {request.user_id}, session {session_id}: {USER_AGENT_STATE.get((request.user_id, session_id))}")
-    # Resolve the active agent from state, defaulting to CustomerDeskAgent for new sessions
-    agent_name = USER_AGENT_STATE.get((request.user_id, session_id), "CustomerDeskAgent")
-    active_agent = get_agent_by_name(agent_name)
-        
-    # Add the new user message
-    input_item: list[TResponseInputItem] = [{
-        "role": "user",
-        "content": request.message
-    }]
-
-    return StreamingResponse(
-        sse(
-            request.user_id,
-            active_agent,
-            input_item,
-            session_id,
-            user_session,
-        ),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-        }
-    )

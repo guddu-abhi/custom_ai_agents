@@ -1,6 +1,7 @@
 import json
 
 import pytest
+
 from loader.utils.checkpoint import CheckpointManager
 
 

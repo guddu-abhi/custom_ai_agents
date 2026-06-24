@@ -1,7 +1,7 @@
 from decimal import Decimal
 
+from domain.models.search import SearchResult
 from generation.core.prompt import CITATION_RE, PromptBuilder
-from retrieval.db.search_repo import SearchResult
 
 
 def _result(pid: int, title: str, desc: str = "feature text") -> SearchResult:

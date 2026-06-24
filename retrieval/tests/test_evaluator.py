@@ -2,8 +2,8 @@ from decimal import Decimal
 
 import pytest
 
+from domain.models.search import SearchResult
 from retrieval.core.evaluator import EvaluationService, _jaccard, _term_coverage, _tokenize
-from retrieval.db.search_repo import SearchResult
 
 
 def _result(product_id: int, title: str, content: str, similarity: float) -> SearchResult:

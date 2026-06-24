@@ -1,9 +1,10 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
 
 from domain.models.generation import ProviderName
+from otto_lib.config import BaseAppSettings
 
 
-class GenerationSettings(BaseSettings):
+class GenerationSettings(BaseAppSettings):
     model_config = SettingsConfigDict(env_prefix="GENERATION_")
 
     provider: ProviderName = "openai"

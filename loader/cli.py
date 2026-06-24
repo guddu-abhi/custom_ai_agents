@@ -5,12 +5,12 @@ from pathlib import Path
 import click
 
 from loader.config import settings
-from loader.core.embedder import EmbeddingService
 from loader.core.loader import LoadOrchestrator
 from loader.db.embed_repo import EmbeddingRepository
 from loader.db.engine import get_connection
 from loader.db.product_repo import ProductRepository
 from loader.utils.checkpoint import CheckpointManager
+from otto_lib.embedding import EmbeddingService
 
 logging.basicConfig(
     level=logging.INFO,
