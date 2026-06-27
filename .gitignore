@@ -223,3 +223,4 @@ __marimo__/
 # CLAUDE.md files
 *.CLAUDE.md
 **/**/*.CLAUDE.md
+**/CLAUDE.md
