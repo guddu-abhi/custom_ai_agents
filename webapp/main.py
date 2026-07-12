@@ -7,7 +7,7 @@ load_dotenv()
 from fastapi import FastAPI  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
-from webapp.api.routers import conversation, otto  # noqa: E402
+from webapp.api.routers import otto  # noqa: E402
 
 app = FastAPI()
 
@@ -20,7 +20,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(conversation.router)
 app.include_router(otto.router)
 
 if __name__ == "__main__":
