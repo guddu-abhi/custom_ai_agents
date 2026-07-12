@@ -77,49 +77,6 @@ async def single_agent_conversation_sse(session: Session, message: str, session_
         yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
 
-@router.post("/chat/otto")
-async def chat_otto(request: OttoRequest):
-    if SHOULD_STREAM_RESPONSE:
-        return StreamingResponse(
-            sse(request.query),
-            media_type="text/event-stream",
-            headers=_SSE_HEADERS,
-        )
-
-    answer = await otto_agent.run(request.query)
-    return {
-        "answer": answer.answer,
-        "citations": [dataclasses.asdict(c) for c in answer.citations],
-    }
-
-
-@router.post("/chat/otto/conversation")
-async def chat_otto_conversation(
-    request: ConversationRequest,
-    db: AsyncSession = Depends(get_db_session),
-):
-    """Multi-turn Otto. Same plan -> retrieve -> answer pipeline as /chat/otto,
-    but stateful per (user_id, session_id): it replans/re-retrieves with prior
-    conversation context, carries filters across turns, and skips retrieval for
-    follow-ups about already-shown products."""
-    session_id = request.session_id or str(uuid4())
-    store = await get_user_session(request.user_id, session_id, db)
-
-    if SHOULD_STREAM_RESPONSE:
-        return StreamingResponse(
-            conversation_sse(store, request.message, session_id),
-            media_type="text/event-stream",
-            headers=_SSE_HEADERS,
-        )
-
-    answer = await conversational_otto_agent.run(store, request.message)
-    return {
-        "answer": answer.answer,
-        "citations": [dataclasses.asdict(c) for c in answer.citations],
-        "session_id": session_id,
-    }
-
-
 @router.post("/chat/otto/conversation/single_agent")
 async def chat_otto_conversation_single_agent(
     request: ConversationRequest,
