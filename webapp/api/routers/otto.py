@@ -59,9 +59,11 @@ async def conversation_sse(session: Session, message: str, session_id: str):
         yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
 
-async def single_agent_conversation_sse(session: Session, message: str, session_id: str):
+async def single_agent_conversation_sse(
+    session: Session, message: str, session_id: str, user_id: str
+):
     try:
-        async for item in single_agent_otto.stream(session, message):
+        async for item in single_agent_otto.stream(session, message, session_id, user_id):
             if isinstance(item, OttoAnswer):
                 citations = [dataclasses.asdict(c) for c in item.citations]
                 yield (
@@ -92,12 +94,12 @@ async def chat_otto_conversation_single_agent(
 
     if SHOULD_STREAM_RESPONSE:
         return StreamingResponse(
-            single_agent_conversation_sse(store, request.message, session_id),
+            single_agent_conversation_sse(store, request.message, session_id, request.user_id),
             media_type="text/event-stream",
             headers=_SSE_HEADERS,
         )
 
-    answer = await single_agent_otto.run(store, request.message)
+    answer = await single_agent_otto.run(store, request.message, session_id, request.user_id)
     return {
         "answer": answer.answer,
         "citations": [dataclasses.asdict(c) for c in answer.citations],

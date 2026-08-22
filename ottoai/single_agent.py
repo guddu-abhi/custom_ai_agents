@@ -14,7 +14,9 @@ free. The retrieval SQL/filter behavior is reused unchanged via
 """
 
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+
+import mlflow
 
 from agents import Agent, RunContextWrapper, Runner, function_tool, trace
 from agents.memory import Session
@@ -24,6 +26,7 @@ from generation.core.prompt import SYSTEM_PROMPT, PromptBuilder
 from loader.config import settings as loader_settings
 from otto_lib.embedding import EmbeddingService
 from otto_lib.logging import get_logger
+from otto_lib.tracing import tag_session
 from ottoai.config import settings
 from ottoai.otto_agent import retrieve_products
 
@@ -168,27 +171,58 @@ class SingleAgentOtto:
         )
 # query : find matching products + accessories + compatible lenses
 # hybrid search - RRF
-    async def stream(self, session: Session, message: str) -> AsyncIterator[str | OttoAnswer]:
-        with trace("otto single-agent turn", metadata={"message": message[:200]}):
-            logger.info("otto-single | message={!r}", message)
-
-            # Per-run accumulator the tool writes into; `session` gives the agent
-            # its multi-turn memory (messages + tool calls/results) for free.
-            ctx = OttoToolContext(embedder=self._embedder, prompt=self._prompt)
-            streamed = Runner.run_streamed(
-                self._agent, message, context=ctx, session=session
+    async def stream(
+        self,
+        session: Session,
+        message: str,
+        session_id: str,
+        user_id: str | None = None,
+    ) -> AsyncIterator[str | OttoAnswer]:
+        # Own an MLflow span that wraps the whole turn so the trace's Inputs /
+        # Outputs carry the FULL request + response JSON (not just the answer
+        # string autolog captures). The autolog LLM/tool spans nest underneath
+        # this span, and it becomes the trace root.
+        with mlflow.start_span(name="otto single-agent turn") as span:
+            # Full request JSON -> trace Inputs (mirrors the HTTP request body).
+            span.set_inputs(
+                {"user_id": user_id, "session_id": session_id, "message": message}
             )
-            chunks: list[str] = []
-            async for event in streamed.stream_events():
-                if (
-                    event.type == "raw_response_event"
-                    and event.data.type == "response.output_text.delta"
-                ):
-                    chunks.append(event.data.delta)
-                    yield event.data.delta
+            with trace("otto single-agent turn", metadata={"message": message[:200]}):
+                logger.info("otto-single | message={!r}", message)
 
-            answer = "".join(chunks)
-            citations = extract_citations(answer, list(ctx.seen.values()))
+                # Per-run accumulator the tool writes into; `session` gives the agent
+                # its multi-turn memory (messages + tool calls/results) for free.
+                ctx = OttoToolContext(embedder=self._embedder, prompt=self._prompt)
+                streamed = Runner.run_streamed(
+                    self._agent, message, context=ctx, session=session
+                )
+                chunks: list[str] = []
+                tagged = False
+                async for event in streamed.stream_events():
+                    # Tag this turn's trace with the conversation session on the first
+                    # event (the MLflow trace is live once the run starts streaming),
+                    # so every turn of a session groups together in the MLflow UI.
+                    if not tagged:
+                        tag_session(session_id, user_id)
+                        tagged = True
+                    if (
+                        event.type == "raw_response_event"
+                        and event.data.type == "response.output_text.delta"
+                    ):
+                        chunks.append(event.data.delta)
+                        yield event.data.delta
+
+                answer = "".join(chunks)
+                citations = extract_citations(answer, list(ctx.seen.values()))
+
+            # Full response JSON -> trace Outputs (mirrors the endpoint return).
+            span.set_outputs(
+                {
+                    "answer": answer,
+                    "citations": [asdict(c) for c in citations],
+                    "session_id": session_id,
+                }
+            )
             logger.info(
                 "otto-single | answer: chars={} tool_products={} citations={}",
                 len(answer),
@@ -197,9 +231,15 @@ class SingleAgentOtto:
             )
             yield OttoAnswer(query=message, answer=answer, citations=citations)
 
-    async def run(self, session: Session, message: str) -> OttoAnswer:
+    async def run(
+        self,
+        session: Session,
+        message: str,
+        session_id: str,
+        user_id: str | None = None,
+    ) -> OttoAnswer:
         final: OttoAnswer | None = None
-        async for item in self.stream(session, message):
+        async for item in self.stream(session, message, session_id, user_id):
             if isinstance(item, OttoAnswer):
                 final = item
         assert final is not None, "stream did not yield a final OttoAnswer"
