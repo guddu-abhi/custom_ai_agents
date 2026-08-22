@@ -111,4 +111,10 @@ rag-eval-local query env="local" provider="ollama" model="qwen2.5:3b-instruct" k
 
 
 run-webapp:
-    uv run uvicorn webapp.main:app
+    uv run uvicorn webapp.main:app --host 0.0.0.0 --port 8000 --reload
+
+# View MLflow traces locally (SQLite backend shared with the webapp).
+# Port 5050, not 5000 — macOS ControlCenter/AirPlay Receiver owns :5000 and
+# returns 403. The webapp logs straight to mlflow.db, so this port is view-only.
+mlflow-ui:
+    uv run mlflow ui --backend-store-uri sqlite:///mlflow.db --port 5050
